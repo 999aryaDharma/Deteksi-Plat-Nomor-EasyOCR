@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>License Plate OCR Comparison</title>
+		<link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}" />
+	</head>
+	<body>
+		<div class="container">
+			<header>
+				<h1>License Plate OCR Comparison</h1>
+				<p class="subtitle">Compare two license plate images using multiple preprocessing approaches</p>
+			</header>
+
+			<main>
+				<form id="upload-form" class="upload-section">
+					<div class="image-upload-container">
+						<div class="upload-box">
+							<h3>Image 1</h3>
+							<div class="file-input-wrapper">
+								<input type="file" name="image1" accept="image/*" required class="file-input" />
+								<div class="preview" id="preview1"></div>
+							</div>
+							<input type="text" name="ground_truth1" placeholder="Ground Truth (optional)" class="ground-truth" />
+						</div>
+
+						<div class="upload-box">
+							<h3>Image 2</h3>
+							<div class="file-input-wrapper">
+								<input type="file" name="image2" accept="image/*" required class="file-input" />
+								<div class="preview" id="preview2"></div>
+							</div>
+							<input type="text" name="ground_truth2" placeholder="Ground Truth (optional)" class="ground-truth" />
+						</div>
+					</div>
+					<button type="submit" class="submit-btn">Process Images</button>
+				</form>
+
+				<div id="results" class="results-section hidden">
+					<div class="comparison-plot">
+						<h2>Results Comparison</h2>
+						<img id="comparison-plot" alt="Comparison Plot" />
+					</div>
+
+					<div class="results-grid">
+						<div class="result-card" id="result1">
+							<h3>Image 1 Results</h3>
+							<div class="result-content"></div>
+							<div class="preprocessing-results">
+								<h4>Preprocessing Results</h4>
+								<div class="preprocessing-images"></div>
+							</div>
+						</div>
+						<div class="result-card" id="result2">
+							<h3>Image 2 Results</h3>
+							<div class="result-content"></div>
+							<div class="preprocessing-results">
+								<h4>Preprocessing Results</h4>
+								<div class="preprocessing-images"></div>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<div id="loading" class="loading hidden">
+					<div class="spinner"></div>
+					<p>Processing images...</p>
+				</div>
+			</main>
+		</div>
+
+		<script>
+			// Image preview handling
+			function setupImagePreview(num) {
+				const input = document.querySelector(`input[name="image${num}"]`);
+				const preview = document.getElementById(`preview${num}`);
+
+				input.addEventListener("change", function (e) {
+					const file = this.files[0];
+					if (file) {
+						const reader = new FileReader();
+						reader.onload = function (e) {
+							preview.style.backgroundImage = `url(${e.target.result})`;
+							preview.classList.add("has-image");
+						};
+						reader.readAsDataURL(file);
+					}
+				});
+			}
+
+			// Setup preview for both images
+			setupImagePreview("1");
+			setupImagePreview("2");
+
+			// Form submission and results handling
+			document.getElementById("upload-form").addEventListener("submit", async (e) => {
+				e.preventDefault();
+				const form = e.target;
+				const formData = new FormData(form);
+
+				// Show loading
+				const loadingEl = document.getElementById("loading");
+				loadingEl.classList.remove("hidden");
+
+				try {
+					const response = await fetch("/process", {
+						method: "POST",
+						body: formData,
+					});
+					const data = await response.json();
+
+					if (data.error) {
+						alert(data.error);
+						return;
+					}
+
+					// Update comparison plot
+					document.getElementById("comparison-plot").src = `data:image/png;base64,${data.comparison_plot}`;
+
+					// Update results for each image
+					["1", "2"].forEach((num) => {
+						const resultCard = document.getElementById(`result${num}`);
+						const resultContent = resultCard.querySelector(".result-content");
+						const preprocessingImages = resultCard.querySelector(".preprocessing-images");
+						const imageData = data[`image${num}`];
+
+						// Main results
+						resultContent.innerHTML = `
+                    <div class="result-item">
+                        <strong>Prediction:</strong> ${imageData.prediction || "No prediction"}
+                    </div>
+                    <div class="result-item">
+                        <strong>Confidence:</strong> ${((imageData.confidence || 0) * 100).toFixed(2)}%
+                    </div>
+                    <div class="result-item">
+                        <strong>Approach Used:</strong> ${imageData.approach_used || "N/A"}
+                    </div>
+                    ${
+											imageData.char_accuracy
+												? `
+                        <div class="result-item">
+                            <strong>Character Accuracy:</strong> ${imageData.char_accuracy.toFixed(2)}%
+                        </div>
+                    `
+												: ""
+										}
+                `;
+
+						// Preprocessing results
+						if (imageData.preprocessing_results && imageData.preprocessing_results.length > 0) {
+							preprocessingImages.innerHTML = imageData.preprocessing_results
+								.map(
+									(result, idx) => `
+                        <div class="preprocess-result">
+                            <h5>${result.approach_name}</h5>
+                            <div class="image-pair">
+                                <div class="preprocess-image">
+                                    <img src="data:image/png;base64,${result.preprocessed_image}" 
+                                         alt="Preprocessed ${idx + 1}">
+                                    <p>Preprocessed Image</p>
+                                </div>
+                                <div class="preprocess-image">
+                                    <img src="data:image/png;base64,${result.detection_image}" 
+                                         alt="Detection ${idx + 1}">
+                                    <p>Detection Result</p>
+                                </div>
+                            </div>
+                        </div>
+                    `
+								)
+								.join("");
+						} else {
+							preprocessingImages.innerHTML = "<p>No preprocessing results available</p>";
+						}
+					});
+
+					// Show results section
+					document.getElementById("results").classList.remove("hidden");
+				} catch (error) {
+					alert("Error processing images. Please try again.");
+					console.error(error);
+				} finally {
+					loadingEl.classList.add("hidden");
+				}
+			});
+		</script>
+	</body>
+</html>

@@ -1,0 +1,5 @@
+streamlit
+opencv-python
+Flask
+numpy
+easyocr
